@@ -1,0 +1,77 @@
+study(title="Prime", overlay=true)
+
+
+
+sources = input(defval=close, title="prime")
+isHA = input(false, "Use HA Candles", input.bool)
+heikenashi_1 = heikinashi(syminfo.tickerid)
+security_1 = security(heikenashi_1, timeframe.period, sources)
+src = isHA ? security_1 : sources
+
+
+
+per = input(defval=27, minval=1, title="Sampling Period")
+mult = input(defval=1.0, minval=0.1, title="Range Multiplier")
+
+
+// Smooth Average Range
+smoothrng(x, t, m) =>
+    wper = t * 2 - 1
+    avrng = ema(abs(x - x[1]), t)
+    smoothrng = ema(avrng, wper) * m
+    smoothrng
+smrng = smoothrng(src, per, mult)
+
+// Range Filter
+
+rngfilt(x, r) =>
+    rngfilt = x
+    rngfilt := x > nz(rngfilt[1]) ? x - r < nz(rngfilt[1]) ? nz(rngfilt[1]) : x - r : 
+       x + r > nz(rngfilt[1]) ? nz(rngfilt[1]) : x + r
+    rngfilt
+filt = rngfilt(src, smrng)
+
+// Filter Direction
+
+upward = 0.0
+upward := filt > filt[1] ? nz(upward[1]) + 1 : filt < filt[1] ? 0 : nz(upward[1])
+downward = 0.0
+downward := filt < filt[1] ? nz(downward[1]) + 1 : filt > filt[1] ? 0 : nz(downward[1])
+
+// Target Bands
+
+hband = filt + smrng
+lband = filt - smrng
+
+// Colors
+
+filtcolor = upward > 0 ? color.lime : downward > 0 ? color.red : color.orange
+barcolor = src > filt and src > src[1] and upward > 0 ? color.lime : 
+   src > filt and src < src[1] and upward > 0 ? color.green : 
+   src < filt and src < src[1] and downward > 0 ? color.red : 
+   src < filt and src > src[1] and downward > 0 ? color.maroon : color.orange
+
+
+
+// Break Outs 
+
+longCond = bool(na)
+shortCond = bool(na)
+longCond := src > filt and src > src[1] and upward > 0 or 
+   src > filt and src < src[1] and upward > 0
+shortCond := src < filt and src < src[1] and downward > 0 or 
+   src < filt and src > src[1] and downward > 0
+
+CondIni = 0
+CondIni := longCond ? 1 : shortCond ? -1 : CondIni[1]
+longCondition = longCond and CondIni[1] == -1
+shortCondition = shortCond and CondIni[1] == 1
+
+//Alerts
+
+plotshape(longCondition, title="Buy Signal", text="Long", textcolor=color.white, style=shape.labelup, size=size.small, location=location.belowbar, color=color.green, transp=0)
+plotshape(shortCondition, title="Sell Signal", text="Short", textcolor=color.white, style=shape.labeldown, size=size.small, location=location.abovebar, color=color.red, transp=0)
+
+
+alertcondition(longCondition, title='prime Long', message='{"content": "!BUY {{ticker}} 1hr {{close}}"}')
+alertcondition(shortCondition, title='prime Short', message='{"content": "!SELL {{ticker}} 1hr {{close}}"}')
